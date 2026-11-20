@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CloudDeck - Google Drive & OneDrive</title>
+  <title>CloudDeck - Gestor Multinube</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -21,24 +21,42 @@
 
     /* Barra lateral */
     .sidebar {
-      width: 260px; background: var(--panel); border-right: 1px solid var(--border);
+      width: 280px; background: var(--panel); border-right: 1px solid var(--border);
       display: flex; flex-direction: column; padding: 16px; transition: transform 0.25s ease; z-index: 20;
     }
-    .logo { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
-    .nav-label { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; letter-spacing: 0.05em; }
+    .logo { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    .nav-label { font-size: 0.72rem; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; letter-spacing: 0.05em; }
     .nav-btn {
       width: 100%; background: transparent; border: none; color: var(--text);
       padding: 10px 12px; border-radius: 8px; cursor: pointer; display: flex;
-      align-items: center; justify-content: space-between; font-size: 0.95rem; margin-bottom: 4px;
+      align-items: center; justify-content: space-between; font-size: 0.92rem; margin-bottom: 4px; text-align: left;
     }
     .nav-btn:hover, .nav-btn.active { background: var(--panel-hover); }
-    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
-    .status-badge { font-size: 0.7rem; padding: 2px 7px; border-radius: 10px; background: #0f172a; color: var(--muted); }
-    .status-badge.connected { color: #4ade80; border: 1px solid #166534; }
+
+    .accounts-list { flex: 1; overflow-y: auto; margin-bottom: 12px; }
+    .account-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px;
+      transition: background 0.15s;
+    }
+    .account-row:hover, .account-row.active { background: var(--panel-hover); }
+    .account-main { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .account-texts { min-width: 0; flex: 1; }
+    .account-name { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .account-status { font-size: 0.7rem; color: var(--muted); }
+    .account-status.ok { color: #4ade80; }
+    .account-status.expired { color: #fbbf24; }
+    .account-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .mini-btn {
+      background: transparent; border: none; color: var(--muted); cursor: pointer;
+      padding: 4px; border-radius: 4px; font-size: 0.85rem;
+    }
+    .mini-btn:hover { background: rgba(255,255,255,0.1); color: var(--text); }
 
     .btn-primary {
       background: var(--accent); color: white; border: none; padding: 10px 14px;
-      border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; margin-top: auto;
+      border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%;
     }
     .btn-primary:hover { filter: brightness(1.1); }
 
@@ -67,7 +85,7 @@
       padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.82rem;
     }
 
-    /* Lista / Cuadrícula */
+    /* Archivos */
     .files-container { flex: 1; overflow-y: auto; padding: 0 20px 24px; }
     .files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 14px; }
     .files-list { display: flex; flex-direction: column; gap: 8px; }
@@ -89,6 +107,7 @@
       font-size: 0.68rem; padding: 2px 7px; border-radius: 6px; font-weight: 600; align-self: flex-start;
       background: rgba(255,255,255,0.07);
     }
+    .empty-msg { color: var(--muted); font-size: 0.92rem; padding: 20px 0; }
 
     /* Modal */
     .modal-backdrop {
@@ -132,21 +151,14 @@
   <aside class="sidebar" id="sidebar">
     <div class="logo">☁️ CloudDeck</div>
 
-    <button class="nav-btn active" onclick="setFilter('all', this)">
+    <button class="nav-btn active" id="allCloudsBtn" onclick="selectAllClouds()">
       <span>📁 Todas las nubes</span>
     </button>
 
-    <div class="nav-label">Tus Cuentas</div>
-    <button class="nav-btn" onclick="setFilter('gdrive', this)">
-      <span><span class="dot" style="background:var(--gdrive)"></span>Google Drive</span>
-      <span class="status-badge" id="badge-gdrive">Demo</span>
-    </button>
-    <button class="nav-btn" onclick="setFilter('onedrive', this)">
-      <span><span class="dot" style="background:var(--onedrive)"></span>OneDrive</span>
-      <span class="status-badge" id="badge-onedrive">Demo</span>
-    </button>
+    <div class="nav-label">Tus Cuentas Guardadas</div>
+    <div class="accounts-list" id="accountsList"></div>
 
-    <button class="btn-primary" onclick="openConnectModal()">🔌 Conectar Cuentas</button>
+    <button class="btn-primary" onclick="openConnectModal()">+ Agregar Cuenta</button>
   </aside>
 
   <main class="main">
@@ -170,25 +182,25 @@
     </section>
   </main>
 
-  <!-- Modal para configurar y conectar -->
+  <!-- Modal -->
   <div class="modal-backdrop" id="connectModal">
     <div class="modal">
-      <h3>Conectar tus Nubes</h3>
-      <p>Pega tu <strong>Client ID de Google Cloud</strong> (se guarda solo en tu navegador) y pulsa Conectar.</p>
+      <h3>Agregar Cuenta de Nube</h3>
+      <p>Las cuentas que agregues quedarán guardadas en este navegador para entrar con un clic.</p>
 
       <div class="input-group">
-        <label for="googleClientIdInput">Google Client ID:</label>
-        <input type="text" id="googleClientIdInput" placeholder="Ej: 123456789-abc...apps.googleusercontent.com" />
+        <label for="googleClientIdInput">Google Client ID (opcional cambiarlo):</label>
+        <input type="text" id="googleClientIdInput" />
       </div>
 
       <div class="provider-row">
         <span>🟢 Google Drive</span>
-        <button class="btn-sm" onclick="connectGoogleDrive()">Conectar ahora</button>
+        <button class="btn-sm" onclick="connectGoogleDrive()">Iniciar sesión</button>
       </div>
 
       <div class="provider-row">
         <span>🔵 OneDrive</span>
-        <button class="btn-sm" style="background:#475569;" onclick="alert('¡Paso siguiente! Primero conectemos Google Drive.')">Próximo paso</button>
+        <button class="btn-sm" style="background:#475569;" onclick="alert('¡Próximo paso! Primero probemos que tus cuentas queden guardadas.')">Próximo paso</button>
       </div>
 
       <button class="btn-primary" style="margin-top: 12px; background: #475569;" onclick="closeConnectModal()">Cerrar</button>
@@ -196,21 +208,269 @@
   </div>
 
   <script>
-    let currentFilter = "all";
+    // Tu Client ID público (SIN secretos) para que funcione directo en PC y celular
+    const DEFAULT_GDRIVE_ID = "905647573167-6caci848i2j6e1jb4e3rgc9rdp61al72.apps.googleusercontent.com";
+
     let isGridView = true;
-    let googleToken = null;
-    let gdriveStack = [{ id: "root", name: "Mi Unidad (Google Drive)" }];
+    let activeAccountId = "all"; // "all" o el id de una cuenta guardada
+    let savedAccounts = [];      // Se carga desde localStorage
+    let allFiles = [];           // Archivos cargados de las cuentas activas
 
-    // Datos Demo iniciales
-    let files = [
-      { id: "d1", name: "Documentos (Demo)", type: "folder", size: "—", cloud: "gdrive", cloudLabel: "Google Drive", date: "Hoy" },
-      { id: "d2", name: "Apuntes_Informatica.pdf", type: "pdf", size: "1.2 MB", cloud: "gdrive", cloudLabel: "Google Drive", date: "Ayer" },
-      { id: "d3", name: "Fotos Respaldo (Demo)", type: "folder", size: "—", cloud: "onedrive", cloudLabel: "OneDrive", date: "10 Mar" },
-      { id: "d4", name: "Planilla_Gastos.xlsx", type: "sheet", size: "450 KB", cloud: "onedrive", cloudLabel: "OneDrive", date: "08 Mar" }
-    ];
+    // Cargar configuración y cuentas guardadas al abrir o recargar la página
+    function initApp() {
+      const storedClientId = localStorage.getItem("clouddeck_gdrive_id") || DEFAULT_GDRIVE_ID;
+      document.getElementById("googleClientIdInput").value = storedClientId;
 
-    // Cargar Client ID guardado en el navegador
-    document.getElementById("googleClientIdInput").value = localStorage.getItem("clouddeck_gdrive_id") || "";
+      try {
+        savedAccounts = JSON.parse(localStorage.getItem("clouddeck_accounts") || "[]");
+      } catch {
+        savedAccounts = [];
+      }
+
+      renderSidebarAccounts();
+
+      // Si hay cuentas cuya sesión aún no caducó, cargar sus archivos automáticamente
+      const activeGdrive = savedAccounts.filter(a => a.provider === "gdrive" && isTokenValid(a));
+      if (activeGdrive.length > 0) {
+        activeGdrive.forEach(acc => loadGoogleDriveFolder(acc, getCurrentFolderId(acc)));
+      } else {
+        renderFiles();
+      }
+    }
+
+    function saveAccountsToStorage() {
+      localStorage.setItem("clouddeck_accounts", JSON.stringify(savedAccounts));
+    }
+
+    function isTokenValid(acc) {
+      return acc.token && acc.expiresAt && Date.now() < acc.expiresAt;
+    }
+
+    function getCurrentFolderId(acc) {
+      if (!acc.folderStack || acc.folderStack.length === 0) {
+        acc.folderStack = [{ id: "root", name: acc.alias }];
+      }
+      return acc.folderStack[acc.folderStack.length - 1].id;
+    }
+
+    // Dibujar lista de cuentas en el menú izquierdo
+    function renderSidebarAccounts() {
+      const container = document.getElementById("accountsList");
+      container.textContent = "";
+
+      document.getElementById("allCloudsBtn").classList.toggle("active", activeAccountId === "all");
+
+      if (savedAccounts.length === 0) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "font-size:0.82rem; color:var(--muted); padding:6px 10px;";
+        empty.textContent = "Aún no guardaste cuentas. Pulsa '+ Agregar Cuenta'.";
+        container.appendChild(empty);
+        return;
+      }
+
+      savedAccounts.forEach(acc => {
+        const row = document.createElement("div");
+        row.className = "account-row" + (activeAccountId === acc.id ? " active" : "");
+
+        const main = document.createElement("div");
+        main.className = "account-main";
+        main.onclick = () => selectAccount(acc.id);
+
+        const dot = document.createElement("span");
+        dot.className = "dot";
+        dot.style.background = acc.provider === "gdrive" ? "var(--gdrive)" : "var(--onedrive)";
+
+        const texts = document.createElement("div");
+        texts.className = "account-texts";
+
+        const name = document.createElement("div");
+        name.className = "account-name";
+        name.textContent = acc.alias;
+        name.title = acc.email;
+
+        const status = document.createElement("div");
+        const valid = isTokenValid(acc);
+        status.className = "account-status " + (valid ? "ok" : "expired");
+        status.textContent = valid ? "Sesión activa" : "Clic para renovar";
+
+        texts.append(name, status);
+        main.append(dot, texts);
+
+        // Botones editar nombre y quitar cuenta
+        const actions = document.createElement("div");
+        actions.className = "account-actions";
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "mini-btn";
+        editBtn.textContent = "✏️";
+        editBtn.title = "Cambiar nombre";
+        editBtn.onclick = (e) => { e.stopPropagation(); renameAccount(acc.id); };
+
+        const delBtn = document.createElement("button");
+        delBtn.className = "mini-btn";
+        delBtn.textContent = "🗑️";
+        delBtn.title = "Quitar cuenta";
+        delBtn.onclick = (e) => { e.stopPropagation(); removeAccount(acc.id); };
+
+        actions.append(editBtn, delBtn);
+        row.append(main, actions);
+        container.appendChild(row);
+      });
+    }
+
+    function selectAllClouds() {
+      activeAccountId = "all";
+      renderSidebarAccounts();
+      toggleSidebar(false);
+      renderFiles();
+    }
+
+    function selectAccount(accountId) {
+      const acc = savedAccounts.find(a => a.id === accountId);
+      if (!acc) return;
+
+      activeAccountId = accountId;
+      renderSidebarAccounts();
+      toggleSidebar(false);
+
+      // Si el token expiró (pasó 1 hora), pedir renovación con 1 clic preseleccionando ese correo
+      if (!isTokenValid(acc)) {
+        connectGoogleDrive(acc.email);
+      } else {
+        loadGoogleDriveFolder(acc, getCurrentFolderId(acc));
+      }
+    }
+
+    function renameAccount(accountId) {
+      const acc = savedAccounts.find(a => a.id === accountId);
+      if (!acc) return;
+      const newName = prompt("Escribe un nuevo nombre para esta cuenta:", acc.alias);
+      if (newName && newName.trim() !== "") {
+        acc.alias = newName.trim();
+        if (acc.folderStack && acc.folderStack.length > 0) {
+          acc.folderStack[0].name = acc.alias;
+        }
+        // Actualizar etiqueta en los archivos ya cargados
+        allFiles.forEach(f => {
+          if (f.accountId === acc.id) f.cloudLabel = acc.alias;
+        });
+        saveAccountsToStorage();
+        renderSidebarAccounts();
+        renderFiles();
+      }
+    }
+
+    function removeAccount(accountId) {
+      const acc = savedAccounts.find(a => a.id === accountId);
+      if (!acc) return;
+      if (!confirm(`¿Quitar la cuenta "${acc.alias}" de este navegador?`)) return;
+
+      savedAccounts = savedAccounts.filter(a => a.id !== accountId);
+      allFiles = allFiles.filter(f => f.accountId !== accountId);
+      if (activeAccountId === accountId) activeAccountId = "all";
+
+      saveAccountsToStorage();
+      renderSidebarAccounts();
+      renderFiles();
+    }
+
+    // === CONEXIÓN GOOGLE DRIVE ===
+    function connectGoogleDrive(hintEmail = "") {
+      const clientId = document.getElementById("googleClientIdInput").value.trim() || DEFAULT_GDRIVE_ID;
+      localStorage.setItem("clouddeck_gdrive_id", clientId);
+
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: "https://www.googleapis.com/auth/drive",
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error || !tokenResponse.access_token) return;
+
+          const token = tokenResponse.access_token;
+          const expiresInSec = Number(tokenResponse.expires_in || 3500);
+          const expiresAt = Date.now() + (expiresInSec - 60) * 1000;
+
+          // Obtener correo real del usuario desde Google Drive API
+          const aboutRes = await fetch("https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)", {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const aboutData = await aboutRes.json();
+          const email = aboutData.user?.emailAddress || hintEmail || "Cuenta Google";
+          const accId = "gdrive_" + email;
+
+          let existing = savedAccounts.find(a => a.id === accId);
+          if (existing) {
+            existing.token = token;
+            existing.expiresAt = expiresAt;
+          } else {
+            existing = {
+              id: accId,
+              provider: "gdrive",
+              email: email,
+              alias: email, // Por defecto usa el mismo correo electrónico
+              token: token,
+              expiresAt: expiresAt,
+              folderStack: [{ id: "root", name: email }]
+            };
+            savedAccounts.push(existing);
+          }
+
+          activeAccountId = existing.id;
+          saveAccountsToStorage();
+          renderSidebarAccounts();
+          closeConnectModal();
+          await loadGoogleDriveFolder(existing, getCurrentFolderId(existing));
+        }
+      });
+
+      if (hintEmail) {
+        client.requestAccessToken({ hint: hintEmail });
+      } else {
+        client.requestAccessToken({ prompt: "select_account" });
+      }
+    }
+
+    async function loadGoogleDriveFolder(acc, folderId) {
+      const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+      const url = `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=50&orderBy=folder,name&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${acc.token}` } });
+      const data = await res.json();
+
+      if (data.error) {
+        if (res.status === 401) {
+          acc.expiresAt = 0;
+          saveAccountsToStorage();
+          renderSidebarAccounts();
+          alert(`La sesión de "${acc.alias}" caducó. Haz clic en la cuenta para renovarla.`);
+        } else {
+          alert("Error de Google Drive: " + data.error.message);
+        }
+        return;
+      }
+
+      // Reemplazar solo los archivos de esta cuenta
+      allFiles = allFiles.filter(f => f.accountId !== acc.id);
+      const mapped = (data.files || []).map(f => {
+        let type = "file";
+        if (f.mimeType.includes("folder")) type = "folder";
+        else if (f.mimeType.includes("pdf")) type = "pdf";
+        else if (f.mimeType.includes("spreadsheet") || f.mimeType.includes("excel")) type = "sheet";
+        else if (f.mimeType.includes("image")) type = "image";
+
+        return {
+          id: f.id,
+          accountId: acc.id,
+          name: f.name,
+          type,
+          size: f.size ? `${(f.size / 1024 / 1024).toFixed(2)} MB` : "—",
+          cloudLabel: acc.alias,
+          date: new Date(f.modifiedTime).toLocaleDateString(),
+          webViewLink: f.webViewLink
+        };
+      });
+
+      allFiles = [...allFiles, ...mapped];
+      renderFiles();
+    }
 
     function getIcon(type) {
       const icons = { folder: "📁", pdf: "📕", sheet: "📊", image: "🖼️", file: "📄" };
@@ -223,14 +483,24 @@
       container.className = isGridView ? "files-grid" : "files-list";
       container.textContent = "";
 
-      const filtered = files.filter(f => {
-        const matchesCloud = currentFilter === "all" || f.cloud === currentFilter;
+      const filtered = allFiles.filter(f => {
+        const matchesAcc = activeAccountId === "all" || f.accountId === activeAccountId;
         const matchesQuery = f.name.toLowerCase().includes(query);
-        return matchesCloud && matchesQuery;
+        return matchesAcc && matchesQuery;
       });
 
       document.getElementById("countLabel").textContent = `${filtered.length} elementos`;
       updateBreadcrumb();
+
+      if (filtered.length === 0) {
+        const msg = document.createElement("div");
+        msg.className = "empty-msg";
+        msg.textContent = savedAccounts.length === 0
+          ? "Pulsa '+ Agregar Cuenta' en el menú izquierdo para conectar tu primer Google Drive."
+          : "No hay archivos para mostrar aquí (si la sesión expiró, haz clic en tu cuenta a la izquierda).";
+        container.appendChild(msg);
+        return;
+      }
 
       filtered.forEach(file => {
         const card = document.createElement("div");
@@ -266,43 +536,98 @@
     function updateBreadcrumb() {
       const bc = document.getElementById("breadcrumb");
       bc.textContent = "";
-      if (currentFilter === "gdrive" && googleToken) {
-        if (gdriveStack.length > 1) {
-          const back = document.createElement("button");
-          back.className = "back-btn";
-          back.textContent = "⬅ Atrás";
-          back.onclick = goBackGDrive;
-          bc.appendChild(back);
+
+      if (activeAccountId !== "all") {
+        const acc = savedAccounts.find(a => a.id === activeAccountId);
+        if (acc) {
+          if (acc.folderStack && acc.folderStack.length > 1) {
+            const back = document.createElement("button");
+            back.className = "back-btn";
+            back.textContent = "⬅ Atrás";
+            back.onclick = () => goBackFolder(acc);
+            bc.appendChild(back);
+          }
+          const strong = document.createElement("strong");
+          strong.textContent = (acc.folderStack || [{ name: acc.alias }]).map(s => s.name).join(" / ");
+          bc.appendChild(strong);
+          return;
         }
-        const strong = document.createElement("strong");
-        strong.textContent = gdriveStack.map(s => s.name).join(" / ");
-        bc.appendChild(strong);
-      } else {
-        const names = { all: "Todas las cuentas", gdrive: "Google Drive", onedrive: "OneDrive" };
-        bc.innerHTML = `Ubicación: <strong>${names[currentFilter]}</strong>`;
       }
+      const label = document.createTextNode("Ubicación: ");
+      const strong = document.createElement("strong");
+      strong.textContent = "Todas las cuentas";
+      bc.append(label, strong);
     }
 
     function handleFileClick(file) {
-      if (file.cloud === "gdrive" && googleToken) {
-        if (file.type === "folder") {
-          gdriveStack.push({ id: file.id, name: file.name });
-          currentFilter = "gdrive";
-          loadGoogleDriveFolder(file.id);
-        } else if (file.webViewLink) {
-          window.open(file.webViewLink, "_blank", "noopener");
+      const acc = savedAccounts.find(a => a.id === file.accountId);
+      if (!acc) return;
+
+      if (file.type === "folder") {
+        if (!isTokenValid(acc)) {
+          connectGoogleDrive(acc.email);
+          return;
         }
-      } else {
-        alert(`Archivo Demo: ${file.name}\nConecta tu cuenta real en "Conectar Cuentas" para abrir o navegar carpetas.`);
+        activeAccountId = acc.id;
+        if (!acc.folderStack) acc.folderStack = [{ id: "root", name: acc.alias }];
+        acc.folderStack.push({ id: file.id, name: file.name });
+        saveAccountsToStorage();
+        renderSidebarAccounts();
+        loadGoogleDriveFolder(acc, file.id);
+      } else if (file.webViewLink) {
+        window.open(file.webViewLink, "_blank", "noopener");
       }
     }
 
-    function setFilter(cloud, btn) {
-      currentFilter = cloud;
-      document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      toggleSidebar(false);
-      renderFiles();
+    function goBackFolder(acc) {
+      if (acc.folderStack && acc.folderStack.length > 1) {
+        acc.folderStack.pop();
+        saveAccountsToStorage();
+        loadGoogleDriveFolder(acc, getCurrentFolderId(acc));
+      }
+    }
+
+    function triggerUpload() {
+      const targetAcc = activeAccountId === "all"
+        ? savedAccounts.find(a => isTokenValid(a))
+        : savedAccounts.find(a => a.id === activeAccountId && isTokenValid(a));
+
+      if (!targetAcc) {
+        alert("Primero selecciona o inicia sesión en una cuenta activa para subir archivos.");
+        return;
+      }
+      document.getElementById("uploadInput").click();
+    }
+
+    async function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const targetAcc = activeAccountId === "all"
+        ? savedAccounts.find(a => isTokenValid(a))
+        : savedAccounts.find(a => a.id === activeAccountId && isTokenValid(a));
+
+      if (!targetAcc) return;
+
+      const currentFolder = getCurrentFolderId(targetAcc);
+      const metadata = { name: file.name, parents: [currentFolder] };
+      const form = new FormData();
+      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+      form.append("file", file);
+
+      const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${targetAcc.token}` },
+        body: form
+      });
+
+      if (res.ok) {
+        alert(`✅ "${file.name}" subido a "${targetAcc.alias}".`);
+        loadGoogleDriveFolder(targetAcc, currentFolder);
+      } else {
+        alert("Hubo un error al subir el archivo.");
+      }
+      event.target.value = "";
     }
 
     function toggleView() {
@@ -319,110 +644,7 @@
     function openConnectModal() { document.getElementById("connectModal").classList.add("open"); }
     function closeConnectModal() { document.getElementById("connectModal").classList.remove("open"); }
 
-    // === CONEXIÓN REAL A GOOGLE DRIVE ===
-    function connectGoogleDrive() {
-      const clientId = document.getElementById("googleClientIdInput").value.trim();
-      if (!clientId || !clientId.includes("apps.googleusercontent.com")) {
-        alert("Por favor pega un Client ID válido de Google Cloud Console.");
-        return;
-      }
-      localStorage.setItem("clouddeck_gdrive_id", clientId);
-
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: "https://www.googleapis.com/auth/drive",
-        callback: async (tokenResponse) => {
-          if (tokenResponse.access_token) {
-            googleToken = tokenResponse.access_token;
-            gdriveStack = [{ id: "root", name: "Mi Unidad" }];
-            const badge = document.getElementById("badge-gdrive");
-            badge.textContent = "Conectado";
-            badge.classList.add("connected");
-            closeConnectModal();
-            await loadGoogleDriveFolder("root");
-          }
-        }
-      });
-      client.requestAccessToken();
-    }
-
-    async function loadGoogleDriveFolder(folderId) {
-      const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
-      const url = `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=50&orderBy=folder,name&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${googleToken}` } });
-      const data = await res.json();
-
-      if (data.error) {
-        alert("Error de Google Drive: " + data.error.message);
-        return;
-      }
-
-      files = files.filter(f => f.cloud !== "gdrive");
-      const realFiles = (data.files || []).map(f => {
-        let type = "file";
-        if (f.mimeType.includes("folder")) type = "folder";
-        else if (f.mimeType.includes("pdf")) type = "pdf";
-        else if (f.mimeType.includes("spreadsheet") || f.mimeType.includes("excel")) type = "sheet";
-        else if (f.mimeType.includes("image")) type = "image";
-
-        return {
-          id: f.id,
-          name: f.name,
-          type,
-          size: f.size ? `${(f.size / 1024 / 1024).toFixed(2)} MB` : "—",
-          cloud: "gdrive",
-          cloudLabel: "Google Drive",
-          date: new Date(f.modifiedTime).toLocaleDateString(),
-          webViewLink: f.webViewLink
-        };
-      });
-
-      files = [...realFiles, ...files];
-      renderFiles();
-    }
-
-    function goBackGDrive() {
-      if (gdriveStack.length > 1) {
-        gdriveStack.pop();
-        const prev = gdriveStack[gdriveStack.length - 1];
-        loadGoogleDriveFolder(prev.id);
-      }
-    }
-
-    function triggerUpload() {
-      if (!googleToken) {
-        alert("Conecta primero tu Google Drive para subir archivos.");
-        return;
-      }
-      document.getElementById("uploadInput").click();
-    }
-
-    async function handleFileUpload(event) {
-      const file = event.target.files[0];
-      if (!file || !googleToken) return;
-
-      const currentFolder = gdriveStack[gdriveStack.length - 1].id;
-      const metadata = { name: file.name, parents: [currentFolder] };
-      const form = new FormData();
-      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
-      form.append("file", file);
-
-      const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${googleToken}` },
-        body: form
-      });
-
-      if (res.ok) {
-        alert(`✅ "${file.name}" se subió correctamente a Google Drive.`);
-        loadGoogleDriveFolder(currentFolder);
-      } else {
-        alert("Hubo un error al subir el archivo.");
-      }
-      event.target.value = "";
-    }
-
-    renderFiles();
+    initApp();
   </script>
 </body>
 </html>
