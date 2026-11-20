@@ -1,1 +1,428 @@
-hellow word
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudDeck - Google Drive & OneDrive</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-hover: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --border: #334155;
+      --gdrive: #22c55e;
+      --onedrive: #0ea5e9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); height: 100dvh; display: flex; overflow: hidden; }
+
+    /* Barra lateral */
+    .sidebar {
+      width: 260px; background: var(--panel); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 16px; transition: transform 0.25s ease; z-index: 20;
+    }
+    .logo { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+    .nav-label { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; letter-spacing: 0.05em; }
+    .nav-btn {
+      width: 100%; background: transparent; border: none; color: var(--text);
+      padding: 10px 12px; border-radius: 8px; cursor: pointer; display: flex;
+      align-items: center; justify-content: space-between; font-size: 0.95rem; margin-bottom: 4px;
+    }
+    .nav-btn:hover, .nav-btn.active { background: var(--panel-hover); }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+    .status-badge { font-size: 0.7rem; padding: 2px 7px; border-radius: 10px; background: #0f172a; color: var(--muted); }
+    .status-badge.connected { color: #4ade80; border: 1px solid #166534; }
+
+    .btn-primary {
+      background: var(--accent); color: white; border: none; padding: 10px 14px;
+      border-radius: 8px; cursor: pointer; font-weight: 600; width: 100%; margin-top: auto;
+    }
+    .btn-primary:hover { filter: brightness(1.1); }
+
+    /* Área principal */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .topbar {
+      height: 64px; border-bottom: 1px solid var(--border); display: flex;
+      align-items: center; gap: 10px; padding: 0 16px; background: var(--bg);
+    }
+    .menu-toggle { display: none; background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .search-box {
+      flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      padding: 9px 14px; border-radius: 8px; outline: none; font-size: 0.95rem; min-width: 0;
+    }
+    .icon-btn {
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      padding: 8px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; font-size: 0.88rem;
+    }
+    .icon-btn.upload { background: #16a34a; border-color: #15803d; font-weight: 600; }
+
+    .toolbar { padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .breadcrumb { font-size: 0.9rem; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .breadcrumb strong { color: var(--text); }
+    .back-btn {
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.82rem;
+    }
+
+    /* Lista / Cuadrícula */
+    .files-container { flex: 1; overflow-y: auto; padding: 0 20px 24px; }
+    .files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 14px; }
+    .files-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .file-card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px; cursor: pointer; transition: border-color 0.15s, transform 0.1s;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .file-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .files-list .file-card { flex-direction: row; align-items: center; justify-content: space-between; padding: 10px 14px; }
+
+    .file-icon { font-size: 2rem; }
+    .files-list .file-icon { font-size: 1.4rem; margin-right: 10px; }
+    .file-info { min-width: 0; flex: 1; }
+    .file-name { font-weight: 500; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta { font-size: 0.78rem; color: var(--muted); margin-top: 3px; }
+    .cloud-tag {
+      font-size: 0.68rem; padding: 2px 7px; border-radius: 6px; font-weight: 600; align-self: flex-start;
+      background: rgba(255,255,255,0.07);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: none;
+      align-items: center; justify-content: center; padding: 16px; z-index: 50;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      width: 100%; max-width: 440px; padding: 20px;
+    }
+    .modal h3 { margin-bottom: 10px; }
+    .modal p { font-size: 0.86rem; color: var(--muted); margin-bottom: 14px; line-height: 1.45; }
+    .input-group { margin-bottom: 14px; }
+    .input-group label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; }
+    .input-group input {
+      width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-size: 0.85rem;
+    }
+    .provider-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px; background: var(--bg); border-radius: 8px; margin-bottom: 8px;
+    }
+    .btn-sm { padding: 7px 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: var(--accent); color: #fff; }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 15; }
+
+    @media (max-width: 768px) {
+      .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .overlay.open { display: block; }
+      .menu-toggle { display: inline-block; }
+      .files-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
+    }
+  </style>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+  <div class="overlay" id="overlay" onclick="toggleSidebar(false)"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="logo">☁️ CloudDeck</div>
+
+    <button class="nav-btn active" onclick="setFilter('all', this)">
+      <span>📁 Todas las nubes</span>
+    </button>
+
+    <div class="nav-label">Tus Cuentas</div>
+    <button class="nav-btn" onclick="setFilter('gdrive', this)">
+      <span><span class="dot" style="background:var(--gdrive)"></span>Google Drive</span>
+      <span class="status-badge" id="badge-gdrive">Demo</span>
+    </button>
+    <button class="nav-btn" onclick="setFilter('onedrive', this)">
+      <span><span class="dot" style="background:var(--onedrive)"></span>OneDrive</span>
+      <span class="status-badge" id="badge-onedrive">Demo</span>
+    </button>
+
+    <button class="btn-primary" onclick="openConnectModal()">🔌 Conectar Cuentas</button>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="menu-toggle" onclick="toggleSidebar(true)">☰</button>
+      <input type="search" class="search-box" id="searchInput" placeholder="Buscar archivos..." oninput="renderFiles()" />
+      <input type="file" id="uploadInput" hidden onchange="handleFileUpload(event)" />
+      <button class="icon-btn upload" onclick="triggerUpload()">⬆ Subir</button>
+      <button class="icon-btn" id="viewBtn" onclick="toggleView()">☰ Lista</button>
+    </header>
+
+    <div class="toolbar">
+      <div class="breadcrumb" id="breadcrumb">
+        Ubicación: <strong>Todas las cuentas</strong>
+      </div>
+      <div style="font-size: 0.85rem; color: var(--muted);" id="countLabel">0 elementos</div>
+    </div>
+
+    <section class="files-container">
+      <div class="files-grid" id="filesList"></div>
+    </section>
+  </main>
+
+  <!-- Modal para configurar y conectar -->
+  <div class="modal-backdrop" id="connectModal">
+    <div class="modal">
+      <h3>Conectar tus Nubes</h3>
+      <p>Pega tu <strong>Client ID de Google Cloud</strong> (se guarda solo en tu navegador) y pulsa Conectar.</p>
+
+      <div class="input-group">
+        <label for="googleClientIdInput">Google Client ID:</label>
+        <input type="text" id="googleClientIdInput" placeholder="Ej: 123456789-abc...apps.googleusercontent.com" />
+      </div>
+
+      <div class="provider-row">
+        <span>🟢 Google Drive</span>
+        <button class="btn-sm" onclick="connectGoogleDrive()">Conectar ahora</button>
+      </div>
+
+      <div class="provider-row">
+        <span>🔵 OneDrive</span>
+        <button class="btn-sm" style="background:#475569;" onclick="alert('¡Paso siguiente! Primero conectemos Google Drive.')">Próximo paso</button>
+      </div>
+
+      <button class="btn-primary" style="margin-top: 12px; background: #475569;" onclick="closeConnectModal()">Cerrar</button>
+    </div>
+  </div>
+
+  <script>
+    let currentFilter = "all";
+    let isGridView = true;
+    let googleToken = null;
+    let gdriveStack = [{ id: "root", name: "Mi Unidad (Google Drive)" }];
+
+    // Datos Demo iniciales
+    let files = [
+      { id: "d1", name: "Documentos (Demo)", type: "folder", size: "—", cloud: "gdrive", cloudLabel: "Google Drive", date: "Hoy" },
+      { id: "d2", name: "Apuntes_Informatica.pdf", type: "pdf", size: "1.2 MB", cloud: "gdrive", cloudLabel: "Google Drive", date: "Ayer" },
+      { id: "d3", name: "Fotos Respaldo (Demo)", type: "folder", size: "—", cloud: "onedrive", cloudLabel: "OneDrive", date: "10 Mar" },
+      { id: "d4", name: "Planilla_Gastos.xlsx", type: "sheet", size: "450 KB", cloud: "onedrive", cloudLabel: "OneDrive", date: "08 Mar" }
+    ];
+
+    // Cargar Client ID guardado en el navegador
+    document.getElementById("googleClientIdInput").value = localStorage.getItem("clouddeck_gdrive_id") || "";
+
+    function getIcon(type) {
+      const icons = { folder: "📁", pdf: "📕", sheet: "📊", image: "🖼️", file: "📄" };
+      return icons[type] || "📄";
+    }
+
+    function renderFiles() {
+      const container = document.getElementById("filesList");
+      const query = document.getElementById("searchInput").value.toLowerCase();
+      container.className = isGridView ? "files-grid" : "files-list";
+      container.textContent = "";
+
+      const filtered = files.filter(f => {
+        const matchesCloud = currentFilter === "all" || f.cloud === currentFilter;
+        const matchesQuery = f.name.toLowerCase().includes(query);
+        return matchesCloud && matchesQuery;
+      });
+
+      document.getElementById("countLabel").textContent = `${filtered.length} elementos`;
+      updateBreadcrumb();
+
+      filtered.forEach(file => {
+        const card = document.createElement("div");
+        card.className = "file-card";
+        card.onclick = () => handleFileClick(file);
+
+        const icon = document.createElement("div");
+        icon.className = "file-icon";
+        icon.textContent = getIcon(file.type);
+
+        const info = document.createElement("div");
+        info.className = "file-info";
+
+        const name = document.createElement("div");
+        name.className = "file-name";
+        name.textContent = file.name;
+
+        const meta = document.createElement("div");
+        meta.className = "file-meta";
+        meta.textContent = `${file.size} • ${file.date}`;
+
+        info.append(name, meta);
+
+        const tag = document.createElement("span");
+        tag.className = "cloud-tag";
+        tag.textContent = file.cloudLabel;
+
+        card.append(icon, info, tag);
+        container.appendChild(card);
+      });
+    }
+
+    function updateBreadcrumb() {
+      const bc = document.getElementById("breadcrumb");
+      bc.textContent = "";
+      if (currentFilter === "gdrive" && googleToken) {
+        if (gdriveStack.length > 1) {
+          const back = document.createElement("button");
+          back.className = "back-btn";
+          back.textContent = "⬅ Atrás";
+          back.onclick = goBackGDrive;
+          bc.appendChild(back);
+        }
+        const strong = document.createElement("strong");
+        strong.textContent = gdriveStack.map(s => s.name).join(" / ");
+        bc.appendChild(strong);
+      } else {
+        const names = { all: "Todas las cuentas", gdrive: "Google Drive", onedrive: "OneDrive" };
+        bc.innerHTML = `Ubicación: <strong>${names[currentFilter]}</strong>`;
+      }
+    }
+
+    function handleFileClick(file) {
+      if (file.cloud === "gdrive" && googleToken) {
+        if (file.type === "folder") {
+          gdriveStack.push({ id: file.id, name: file.name });
+          currentFilter = "gdrive";
+          loadGoogleDriveFolder(file.id);
+        } else if (file.webViewLink) {
+          window.open(file.webViewLink, "_blank", "noopener");
+        }
+      } else {
+        alert(`Archivo Demo: ${file.name}\nConecta tu cuenta real en "Conectar Cuentas" para abrir o navegar carpetas.`);
+      }
+    }
+
+    function setFilter(cloud, btn) {
+      currentFilter = cloud;
+      document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      toggleSidebar(false);
+      renderFiles();
+    }
+
+    function toggleView() {
+      isGridView = !isGridView;
+      document.getElementById("viewBtn").textContent = isGridView ? "☰ Lista" : "⊞ Cuadrícula";
+      renderFiles();
+    }
+
+    function toggleSidebar(open) {
+      document.getElementById("sidebar").classList.toggle("open", open);
+      document.getElementById("overlay").classList.toggle("open", open);
+    }
+
+    function openConnectModal() { document.getElementById("connectModal").classList.add("open"); }
+    function closeConnectModal() { document.getElementById("connectModal").classList.remove("open"); }
+
+    // === CONEXIÓN REAL A GOOGLE DRIVE ===
+    function connectGoogleDrive() {
+      const clientId = document.getElementById("googleClientIdInput").value.trim();
+      if (!clientId || !clientId.includes("apps.googleusercontent.com")) {
+        alert("Por favor pega un Client ID válido de Google Cloud Console.");
+        return;
+      }
+      localStorage.setItem("clouddeck_gdrive_id", clientId);
+
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: "https://www.googleapis.com/auth/drive",
+        callback: async (tokenResponse) => {
+          if (tokenResponse.access_token) {
+            googleToken = tokenResponse.access_token;
+            gdriveStack = [{ id: "root", name: "Mi Unidad" }];
+            const badge = document.getElementById("badge-gdrive");
+            badge.textContent = "Conectado";
+            badge.classList.add("connected");
+            closeConnectModal();
+            await loadGoogleDriveFolder("root");
+          }
+        }
+      });
+      client.requestAccessToken();
+    }
+
+    async function loadGoogleDriveFolder(folderId) {
+      const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+      const url = `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=50&orderBy=folder,name&fields=files(id,name,mimeType,size,modifiedTime,webViewLink)`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${googleToken}` } });
+      const data = await res.json();
+
+      if (data.error) {
+        alert("Error de Google Drive: " + data.error.message);
+        return;
+      }
+
+      files = files.filter(f => f.cloud !== "gdrive");
+      const realFiles = (data.files || []).map(f => {
+        let type = "file";
+        if (f.mimeType.includes("folder")) type = "folder";
+        else if (f.mimeType.includes("pdf")) type = "pdf";
+        else if (f.mimeType.includes("spreadsheet") || f.mimeType.includes("excel")) type = "sheet";
+        else if (f.mimeType.includes("image")) type = "image";
+
+        return {
+          id: f.id,
+          name: f.name,
+          type,
+          size: f.size ? `${(f.size / 1024 / 1024).toFixed(2)} MB` : "—",
+          cloud: "gdrive",
+          cloudLabel: "Google Drive",
+          date: new Date(f.modifiedTime).toLocaleDateString(),
+          webViewLink: f.webViewLink
+        };
+      });
+
+      files = [...realFiles, ...files];
+      renderFiles();
+    }
+
+    function goBackGDrive() {
+      if (gdriveStack.length > 1) {
+        gdriveStack.pop();
+        const prev = gdriveStack[gdriveStack.length - 1];
+        loadGoogleDriveFolder(prev.id);
+      }
+    }
+
+    function triggerUpload() {
+      if (!googleToken) {
+        alert("Conecta primero tu Google Drive para subir archivos.");
+        return;
+      }
+      document.getElementById("uploadInput").click();
+    }
+
+    async function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file || !googleToken) return;
+
+      const currentFolder = gdriveStack[gdriveStack.length - 1].id;
+      const metadata = { name: file.name, parents: [currentFolder] };
+      const form = new FormData();
+      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+      form.append("file", file);
+
+      const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${googleToken}` },
+        body: form
+      });
+
+      if (res.ok) {
+        alert(`✅ "${file.name}" se subió correctamente a Google Drive.`);
+        loadGoogleDriveFolder(currentFolder);
+      } else {
+        alert("Hubo un error al subir el archivo.");
+      }
+      event.target.value = "";
+    }
+
+    renderFiles();
+  </script>
+</body>
+</html>
