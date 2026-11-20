@@ -117,21 +117,35 @@
     .modal-backdrop.open { display: flex; }
     .modal {
       background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-      width: 100%; max-width: 440px; padding: 20px;
+      width: 100%; max-width: 440px; padding: 20px; max-height: 90dvh; overflow-y: auto;
     }
     .modal h3 { margin-bottom: 10px; }
     .modal p { font-size: 0.86rem; color: var(--muted); margin-bottom: 14px; line-height: 1.45; }
-    .input-group { margin-bottom: 14px; }
-    .input-group label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; }
-    .input-group input {
-      width: 100%; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border);
-      background: var(--bg); color: var(--text); font-size: 0.85rem;
-    }
     .provider-row {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 10px; background: var(--bg); border-radius: 8px; margin-bottom: 8px;
+      padding: 12px; background: var(--bg); border-radius: 8px; margin-bottom: 8px;
     }
     .btn-sm { padding: 7px 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: var(--accent); color: #fff; }
+
+    /* Sección oculta de Ajustes de Nubes */
+    .settings-toggle-btn {
+      width: 100%; background: transparent; border: 1px dashed var(--border); color: var(--muted);
+      padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; margin-top: 8px;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .settings-toggle-btn:hover { color: var(--text); border-color: var(--muted); }
+    .settings-panel {
+      display: none; margin-top: 12px; padding: 12px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    .settings-panel.open { display: block; }
+    .input-group { margin-bottom: 10px; }
+    .input-group label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 5px; }
+    .input-group input {
+      width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--panel); color: var(--text); font-size: 0.84rem;
+    }
+    .settings-feedback { font-size: 0.78rem; color: #4ade80; margin-top: 8px; min-height: 18px; }
     .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 15; }
 
     @media (max-width: 768px) {
@@ -142,6 +156,8 @@
       .files-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
     }
   </style>
+  <!-- Carga el archivo de configuración separado (si existe) -->
+  <script src="config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -188,11 +204,6 @@
       <h3>Agregar Cuenta de Nube</h3>
       <p>Las cuentas que agregues quedarán guardadas en este navegador para entrar con un clic.</p>
 
-      <div class="input-group">
-        <label for="googleClientIdInput">Google Client ID (opcional cambiarlo):</label>
-        <input type="text" id="googleClientIdInput" />
-      </div>
-
       <div class="provider-row">
         <span>🟢 Google Drive</span>
         <button class="btn-sm" onclick="connectGoogleDrive()">Iniciar sesión</button>
@@ -200,26 +211,50 @@
 
       <div class="provider-row">
         <span>🔵 OneDrive</span>
-        <button class="btn-sm" style="background:#475569;" onclick="alert('¡Próximo paso! Primero probemos que tus cuentas queden guardadas.')">Próximo paso</button>
+        <button class="btn-sm" style="background:#475569;" onclick="alert('¡Próximo paso! Conecta OneDrive apenas dejemos listos los ajustes.')">Próximo paso</button>
       </div>
 
-      <button class="btn-primary" style="margin-top: 12px; background: #475569;" onclick="closeConnectModal()">Cerrar</button>
+      <!-- Botón para mostrar/ocultar los ajustes técnicos -->
+      <button class="settings-toggle-btn" onclick="toggleCloudSettings()">
+        ⚙️ Ver ajustes de las nubes
+      </button>
+
+      <div class="settings-panel" id="cloudSettingsPanel">
+        <div class="input-group">
+          <label for="googleClientIdInput">Google Client ID (se guarda en este navegador):</label>
+          <input type="text" id="googleClientIdInput" placeholder="Pega aquí tu Client ID de Google..." />
+        </div>
+        <div class="input-group">
+          <label for="onedriveClientIdInput">OneDrive Client ID (para el próximo paso):</label>
+          <input type="text" id="onedriveClientIdInput" placeholder="Lo configuraremos en el siguiente paso..." disabled />
+        </div>
+        <button class="btn-sm" style="width:100%;" onclick="saveCloudSettings()">💾 Guardar ajustes</button>
+        <div class="settings-feedback" id="settingsFeedback"></div>
+      </div>
+
+      <button class="btn-primary" style="margin-top: 14px; background: #475569;" onclick="closeConnectModal()">Cerrar</button>
     </div>
   </div>
 
   <script>
-    // Tu Client ID público (SIN secretos) para que funcione directo en PC y celular
-    const DEFAULT_GDRIVE_ID = "905647573167-6caci848i2j6e1jb4e3rgc9rdp61al72.apps.googleusercontent.com";
+    // Si config.js no existe o está vacío, usamos valores vacíos por defecto
+    const EXT_CONFIG = window.CLOUD_CONFIG || {};
 
     let isGridView = true;
-    let activeAccountId = "all"; // "all" o el id de una cuenta guardada
-    let savedAccounts = [];      // Se carga desde localStorage
-    let allFiles = [];           // Archivos cargados de las cuentas activas
+    let activeAccountId = "all";
+    let savedAccounts = [];
+    let allFiles = [];
 
-    // Cargar configuración y cuentas guardadas al abrir o recargar la página
+    function getGoogleClientId() {
+      const fromInput = document.getElementById("googleClientIdInput").value.trim();
+      const fromStorage = localStorage.getItem("clouddeck_gdrive_id") || "";
+      const fromConfig = (EXT_CONFIG.googleClientId || "").trim();
+      return fromInput || fromStorage || fromConfig;
+    }
+
     function initApp() {
-      const storedClientId = localStorage.getItem("clouddeck_gdrive_id") || DEFAULT_GDRIVE_ID;
-      document.getElementById("googleClientIdInput").value = storedClientId;
+      const currentGdriveId = localStorage.getItem("clouddeck_gdrive_id") || EXT_CONFIG.googleClientId || "";
+      document.getElementById("googleClientIdInput").value = currentGdriveId;
 
       try {
         savedAccounts = JSON.parse(localStorage.getItem("clouddeck_accounts") || "[]");
@@ -229,13 +264,31 @@
 
       renderSidebarAccounts();
 
-      // Si hay cuentas cuya sesión aún no caducó, cargar sus archivos automáticamente
       const activeGdrive = savedAccounts.filter(a => a.provider === "gdrive" && isTokenValid(a));
       if (activeGdrive.length > 0) {
         activeGdrive.forEach(acc => loadGoogleDriveFolder(acc, getCurrentFolderId(acc)));
       } else {
         renderFiles();
       }
+    }
+
+    function toggleCloudSettings(forceOpen) {
+      const panel = document.getElementById("cloudSettingsPanel");
+      if (typeof forceOpen === "boolean") {
+        panel.classList.toggle("open", forceOpen);
+      } else {
+        panel.classList.toggle("open");
+      }
+      document.getElementById("settingsFeedback").textContent = "";
+    }
+
+    function saveCloudSettings() {
+      const gId = document.getElementById("googleClientIdInput").value.trim();
+      localStorage.setItem("clouddeck_gdrive_id", gId);
+      const fb = document.getElementById("settingsFeedback");
+      fb.textContent = gId
+        ? "✅ Ajustes guardados en este navegador."
+        : "ℹ️ Campo vacío (se usará config.js si tiene un ID).";
     }
 
     function saveAccountsToStorage() {
@@ -253,7 +306,6 @@
       return acc.folderStack[acc.folderStack.length - 1].id;
     }
 
-    // Dibujar lista de cuentas en el menú izquierdo
     function renderSidebarAccounts() {
       const container = document.getElementById("accountsList");
       container.textContent = "";
@@ -296,7 +348,6 @@
         texts.append(name, status);
         main.append(dot, texts);
 
-        // Botones editar nombre y quitar cuenta
         const actions = document.createElement("div");
         actions.className = "account-actions";
 
@@ -333,7 +384,6 @@
       renderSidebarAccounts();
       toggleSidebar(false);
 
-      // Si el token expiró (pasó 1 hora), pedir renovación con 1 clic preseleccionando ese correo
       if (!isTokenValid(acc)) {
         connectGoogleDrive(acc.email);
       } else {
@@ -350,7 +400,6 @@
         if (acc.folderStack && acc.folderStack.length > 0) {
           acc.folderStack[0].name = acc.alias;
         }
-        // Actualizar etiqueta en los archivos ya cargados
         allFiles.forEach(f => {
           if (f.accountId === acc.id) f.cloudLabel = acc.alias;
         });
@@ -376,7 +425,15 @@
 
     // === CONEXIÓN GOOGLE DRIVE ===
     function connectGoogleDrive(hintEmail = "") {
-      const clientId = document.getElementById("googleClientIdInput").value.trim() || DEFAULT_GDRIVE_ID;
+      const clientId = getGoogleClientId();
+      if (!clientId) {
+        openConnectModal();
+        toggleCloudSettings(true);
+        document.getElementById("googleClientIdInput").focus();
+        document.getElementById("settingsFeedback").textContent = "⚠️ Pega tu Google Client ID aquí y pulsa Guardar.";
+        return;
+      }
+
       localStorage.setItem("clouddeck_gdrive_id", clientId);
 
       const client = google.accounts.oauth2.initTokenClient({
@@ -389,7 +446,6 @@
           const expiresInSec = Number(tokenResponse.expires_in || 3500);
           const expiresAt = Date.now() + (expiresInSec - 60) * 1000;
 
-          // Obtener correo real del usuario desde Google Drive API
           const aboutRes = await fetch("https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)", {
             headers: { Authorization: `Bearer ${token}` }
           });
@@ -406,7 +462,7 @@
               id: accId,
               provider: "gdrive",
               email: email,
-              alias: email, // Por defecto usa el mismo correo electrónico
+              alias: email,
               token: token,
               expiresAt: expiresAt,
               folderStack: [{ id: "root", name: email }]
@@ -447,7 +503,6 @@
         return;
       }
 
-      // Reemplazar solo los archivos de esta cuenta
       allFiles = allFiles.filter(f => f.accountId !== acc.id);
       const mapped = (data.files || []).map(f => {
         let type = "file";
@@ -641,7 +696,11 @@
       document.getElementById("overlay").classList.toggle("open", open);
     }
 
-    function openConnectModal() { document.getElementById("connectModal").classList.add("open"); }
+    function openConnectModal() {
+      document.getElementById("cloudSettingsPanel").classList.remove("open");
+      document.getElementById("settingsFeedback").textContent = "";
+      document.getElementById("connectModal").classList.add("open");
+    }
     function closeConnectModal() { document.getElementById("connectModal").classList.remove("open"); }
 
     initApp();
