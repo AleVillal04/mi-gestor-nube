@@ -127,7 +127,6 @@
     }
     .btn-sm { padding: 7px 12px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; background: var(--accent); color: #fff; }
 
-    /* Sección oculta de Ajustes de Nubes */
     .settings-toggle-btn {
       width: 100%; background: transparent; border: 1px dashed var(--border); color: var(--muted);
       padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; margin-top: 8px;
@@ -156,7 +155,6 @@
       .files-grid { grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); }
     }
   </style>
-  <!-- Carga el archivo de configuración separado (si existe) -->
   <script src="config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -210,23 +208,22 @@
       </div>
 
       <div class="provider-row">
-        <span>🔵 OneDrive</span>
-        <button class="btn-sm" style="background:#475569;" onclick="alert('¡Próximo paso! Conecta OneDrive apenas dejemos listos los ajustes.')">Próximo paso</button>
+        <span>🔵 OneDrive (Microsoft)</span>
+        <button class="btn-sm" onclick="connectOneDrive()">Iniciar sesión</button>
       </div>
 
-      <!-- Botón para mostrar/ocultar los ajustes técnicos -->
       <button class="settings-toggle-btn" onclick="toggleCloudSettings()">
         ⚙️ Ver ajustes de las nubes
       </button>
 
       <div class="settings-panel" id="cloudSettingsPanel">
         <div class="input-group">
-          <label for="googleClientIdInput">Google Client ID (se guarda en este navegador):</label>
+          <label for="googleClientIdInput">Google Client ID:</label>
           <input type="text" id="googleClientIdInput" placeholder="Pega aquí tu Client ID de Google..." />
         </div>
         <div class="input-group">
-          <label for="onedriveClientIdInput">OneDrive Client ID (para el próximo paso):</label>
-          <input type="text" id="onedriveClientIdInput" placeholder="Lo configuraremos en el siguiente paso..." disabled />
+          <label for="onedriveClientIdInput">OneDrive Application (Client) ID:</label>
+          <input type="text" id="onedriveClientIdInput" placeholder="Pega aquí tu ID de aplicación de Microsoft..." />
         </div>
         <button class="btn-sm" style="width:100%;" onclick="saveCloudSettings()">💾 Guardar ajustes</button>
         <div class="settings-feedback" id="settingsFeedback"></div>
@@ -237,8 +234,9 @@
   </div>
 
   <script>
-    // Si config.js no existe o está vacío, usamos valores vacíos por defecto
     const EXT_CONFIG = window.CLOUD_CONFIG || {};
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
+    const MS_AUTH_BASE = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
 
     let isGridView = true;
     let activeAccountId = "all";
@@ -252,9 +250,18 @@
       return fromInput || fromStorage || fromConfig;
     }
 
-    function initApp() {
-      const currentGdriveId = localStorage.getItem("clouddeck_gdrive_id") || EXT_CONFIG.googleClientId || "";
-      document.getElementById("googleClientIdInput").value = currentGdriveId;
+    function getOneDriveClientId() {
+      const fromInput = document.getElementById("onedriveClientIdInput").value.trim();
+      const fromStorage = localStorage.getItem("clouddeck_onedrive_id") || "";
+      const fromConfig = (EXT_CONFIG.onedriveClientId || "").trim();
+      return fromInput || fromStorage || fromConfig;
+    }
+
+    async function initApp() {
+      document.getElementById("googleClientIdInput").value =
+        localStorage.getItem("clouddeck_gdrive_id") || EXT_CONFIG.googleClientId || "";
+      document.getElementById("onedriveClientIdInput").value =
+        localStorage.getItem("clouddeck_onedrive_id") || EXT_CONFIG.onedriveClientId || "";
 
       try {
         savedAccounts = JSON.parse(localStorage.getItem("clouddeck_accounts") || "[]");
@@ -262,33 +269,33 @@
         savedAccounts = [];
       }
 
+      await handleMicrosoftRedirectIfAny();
+
       renderSidebarAccounts();
 
-      const activeGdrive = savedAccounts.filter(a => a.provider === "gdrive" && isTokenValid(a));
-      if (activeGdrive.length > 0) {
-        activeGdrive.forEach(acc => loadGoogleDriveFolder(acc, getCurrentFolderId(acc)));
-      } else {
-        renderFiles();
+      for (const acc of savedAccounts) {
+        if (acc.provider === "gdrive" && isTokenValid(acc)) {
+          loadGoogleDriveFolder(acc, getCurrentFolderId(acc));
+        } else if (acc.provider === "onedrive" && (isTokenValid(acc) || acc.refreshToken)) {
+          loadOneDriveFolder(acc, getCurrentFolderId(acc));
+        }
       }
+      renderFiles();
     }
 
     function toggleCloudSettings(forceOpen) {
       const panel = document.getElementById("cloudSettingsPanel");
-      if (typeof forceOpen === "boolean") {
-        panel.classList.toggle("open", forceOpen);
-      } else {
-        panel.classList.toggle("open");
-      }
+      if (typeof forceOpen === "boolean") panel.classList.toggle("open", forceOpen);
+      else panel.classList.toggle("open");
       document.getElementById("settingsFeedback").textContent = "";
     }
 
     function saveCloudSettings() {
       const gId = document.getElementById("googleClientIdInput").value.trim();
+      const oId = document.getElementById("onedriveClientIdInput").value.trim();
       localStorage.setItem("clouddeck_gdrive_id", gId);
-      const fb = document.getElementById("settingsFeedback");
-      fb.textContent = gId
-        ? "✅ Ajustes guardados en este navegador."
-        : "ℹ️ Campo vacío (se usará config.js si tiene un ID).";
+      localStorage.setItem("clouddeck_onedrive_id", oId);
+      document.getElementById("settingsFeedback").textContent = "✅ Ajustes guardados en este navegador.";
     }
 
     function saveAccountsToStorage() {
@@ -341,7 +348,7 @@
         name.title = acc.email;
 
         const status = document.createElement("div");
-        const valid = isTokenValid(acc);
+        const valid = isTokenValid(acc) || (acc.provider === "onedrive" && !!acc.refreshToken);
         status.className = "account-status " + (valid ? "ok" : "expired");
         status.textContent = valid ? "Sesión activa" : "Clic para renovar";
 
@@ -384,10 +391,11 @@
       renderSidebarAccounts();
       toggleSidebar(false);
 
-      if (!isTokenValid(acc)) {
-        connectGoogleDrive(acc.email);
-      } else {
-        loadGoogleDriveFolder(acc, getCurrentFolderId(acc));
+      if (acc.provider === "gdrive") {
+        if (!isTokenValid(acc)) connectGoogleDrive(acc.email);
+        else loadGoogleDriveFolder(acc, getCurrentFolderId(acc));
+      } else if (acc.provider === "onedrive") {
+        loadOneDriveFolder(acc, getCurrentFolderId(acc));
       }
     }
 
@@ -397,12 +405,8 @@
       const newName = prompt("Escribe un nuevo nombre para esta cuenta:", acc.alias);
       if (newName && newName.trim() !== "") {
         acc.alias = newName.trim();
-        if (acc.folderStack && acc.folderStack.length > 0) {
-          acc.folderStack[0].name = acc.alias;
-        }
-        allFiles.forEach(f => {
-          if (f.accountId === acc.id) f.cloudLabel = acc.alias;
-        });
+        if (acc.folderStack && acc.folderStack.length > 0) acc.folderStack[0].name = acc.alias;
+        allFiles.forEach(f => { if (f.accountId === acc.id) f.cloudLabel = acc.alias; });
         saveAccountsToStorage();
         renderSidebarAccounts();
         renderFiles();
@@ -423,7 +427,9 @@
       renderFiles();
     }
 
-    // === CONEXIÓN GOOGLE DRIVE ===
+    // ==========================================
+    // GOOGLE DRIVE
+    // ==========================================
     function connectGoogleDrive(hintEmail = "") {
       const clientId = getGoogleClientId();
       if (!clientId) {
@@ -433,7 +439,6 @@
         document.getElementById("settingsFeedback").textContent = "⚠️ Pega tu Google Client ID aquí y pulsa Guardar.";
         return;
       }
-
       localStorage.setItem("clouddeck_gdrive_id", clientId);
 
       const client = google.accounts.oauth2.initTokenClient({
@@ -441,12 +446,10 @@
         scope: "https://www.googleapis.com/auth/drive",
         callback: async (tokenResponse) => {
           if (tokenResponse.error || !tokenResponse.access_token) return;
-
           const token = tokenResponse.access_token;
-          const expiresInSec = Number(tokenResponse.expires_in || 3500);
-          const expiresAt = Date.now() + (expiresInSec - 60) * 1000;
+          const expiresAt = Date.now() + (Number(tokenResponse.expires_in || 3500) - 60) * 1000;
 
-          const aboutRes = await fetch("https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)", {
+          const aboutRes = await fetch("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)", {
             headers: { Authorization: `Bearer ${token}` }
           });
           const aboutData = await aboutRes.json();
@@ -459,13 +462,8 @@
             existing.expiresAt = expiresAt;
           } else {
             existing = {
-              id: accId,
-              provider: "gdrive",
-              email: email,
-              alias: email,
-              token: token,
-              expiresAt: expiresAt,
-              folderStack: [{ id: "root", name: email }]
+              id: accId, provider: "gdrive", email, alias: email,
+              token, expiresAt, folderStack: [{ id: "root", name: email }]
             };
             savedAccounts.push(existing);
           }
@@ -478,11 +476,8 @@
         }
       });
 
-      if (hintEmail) {
-        client.requestAccessToken({ hint: hintEmail });
-      } else {
-        client.requestAccessToken({ prompt: "select_account" });
-      }
+      if (hintEmail) client.requestAccessToken({ hint: hintEmail });
+      else client.requestAccessToken({ prompt: "select_account" });
     }
 
     async function loadGoogleDriveFolder(acc, folderId) {
@@ -496,7 +491,6 @@
           acc.expiresAt = 0;
           saveAccountsToStorage();
           renderSidebarAccounts();
-          alert(`La sesión de "${acc.alias}" caducó. Haz clic en la cuenta para renovarla.`);
         } else {
           alert("Error de Google Drive: " + data.error.message);
         }
@@ -512,10 +506,7 @@
         else if (f.mimeType.includes("image")) type = "image";
 
         return {
-          id: f.id,
-          accountId: acc.id,
-          name: f.name,
-          type,
+          id: f.id, accountId: acc.id, provider: "gdrive", name: f.name, type,
           size: f.size ? `${(f.size / 1024 / 1024).toFixed(2)} MB` : "—",
           cloudLabel: acc.alias,
           date: new Date(f.modifiedTime).toLocaleDateString(),
@@ -527,6 +518,215 @@
       renderFiles();
     }
 
+    // ==========================================
+    // ONEDRIVE (Cuentas Personales Microsoft)
+    // ==========================================
+    function generateRandomString(len = 64) {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+      const arr = new Uint8Array(len);
+      crypto.getRandomValues(arr);
+      return Array.from(arr, x => chars[x % chars.length]).join("");
+    }
+
+    async function sha256Base64Url(plain) {
+      const data = new TextEncoder().encode(plain);
+      const hash = await crypto.subtle.digest("SHA-256", data);
+      return btoa(String.fromCharCode(...new Uint8Array(hash)))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    }
+
+    async function connectOneDrive() {
+      const clientId = getOneDriveClientId();
+      if (!clientId) {
+        openConnectModal();
+        toggleCloudSettings(true);
+        document.getElementById("onedriveClientIdInput").focus();
+        document.getElementById("settingsFeedback").textContent = "⚠️ Pega tu OneDrive Client ID aquí y pulsa Guardar.";
+        return;
+      }
+      localStorage.setItem("clouddeck_onedrive_id", clientId);
+
+      const verifier = generateRandomString(64);
+      const challenge = await sha256Base64Url(verifier);
+      const state = generateRandomString(24);
+
+      localStorage.setItem("clouddeck_ms_pkce", JSON.stringify({ verifier, state, clientId }));
+
+      const params = new URLSearchParams({
+        client_id: clientId,
+        response_type: "code",
+        redirect_uri: REDIRECT_URI,
+        response_mode: "query",
+        scope: "User.Read Files.ReadWrite offline_access",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        state: state,
+        prompt: "select_account"
+      });
+
+      window.location.href = `${MS_AUTH_BASE}/authorize?${params.toString()}`;
+    }
+
+    async function handleMicrosoftRedirectIfAny() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const state = params.get("state");
+      const err = params.get("error");
+
+      if (err) {
+        const desc = params.get("error_description") || err;
+        window.history.replaceState({}, document.title, window.location.pathname);
+        alert("No se pudo conectar OneDrive: " + desc);
+        return;
+      }
+
+      if (!code || !state) return;
+
+      const savedPkce = JSON.parse(localStorage.getItem("clouddeck_ms_pkce") || "null");
+      localStorage.removeItem("clouddeck_ms_pkce");
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      if (!savedPkce || savedPkce.state !== state) return;
+
+      const body = new URLSearchParams({
+        client_id: savedPkce.clientId,
+        scope: "User.Read Files.ReadWrite offline_access",
+        code: code,
+        redirect_uri: REDIRECT_URI,
+        grant_type: "authorization_code",
+        code_verifier: savedPkce.verifier
+      });
+
+      const tokenRes = await fetch(`${MS_AUTH_BASE}/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString()
+      });
+      const tokenData = await tokenRes.json();
+
+      if (tokenData.error || !tokenData.access_token) {
+        alert("Error obteniendo sesión de OneDrive: " + (tokenData.error_description || tokenData.error));
+        return;
+      }
+
+      const token = tokenData.access_token;
+      const expiresAt = Date.now() + (Number(tokenData.expires_in || 3500) - 60) * 1000;
+
+      const meRes = await fetch("https://graph.microsoft.com/v1.0/me", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const me = await meRes.json();
+      const email = me.mail || me.userPrincipalName || me.displayName || "Cuenta OneDrive";
+      const accId = "onedrive_" + email;
+
+      let existing = savedAccounts.find(a => a.id === accId);
+      if (existing) {
+        existing.token = token;
+        existing.refreshToken = tokenData.refresh_token || existing.refreshToken;
+        existing.expiresAt = expiresAt;
+      } else {
+        existing = {
+          id: accId,
+          provider: "onedrive",
+          email,
+          alias: email,
+          token,
+          refreshToken: tokenData.refresh_token || "",
+          expiresAt,
+          folderStack: [{ id: "root", name: email }]
+        };
+        savedAccounts.push(existing);
+      }
+
+      activeAccountId = existing.id;
+      saveAccountsToStorage();
+    }
+
+    async function ensureOneDriveToken(acc) {
+      if (isTokenValid(acc)) return acc.token;
+      const clientId = getOneDriveClientId();
+      if (!acc.refreshToken || !clientId) return null;
+
+      const body = new URLSearchParams({
+        client_id: clientId,
+        scope: "User.Read Files.ReadWrite offline_access",
+        refresh_token: acc.refreshToken,
+        grant_type: "refresh_token"
+      });
+
+      const res = await fetch(`${MS_AUTH_BASE}/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString()
+      });
+      const data = await res.json();
+
+      if (data.access_token) {
+        acc.token = data.access_token;
+        if (data.refresh_token) acc.refreshToken = data.refresh_token;
+        acc.expiresAt = Date.now() + (Number(data.expires_in || 3500) - 60) * 1000;
+        saveAccountsToStorage();
+        renderSidebarAccounts();
+        return acc.token;
+      } else {
+        acc.refreshToken = "";
+        acc.expiresAt = 0;
+        saveAccountsToStorage();
+        renderSidebarAccounts();
+        return null;
+      }
+    }
+
+    async function loadOneDriveFolder(acc, folderId) {
+      const token = await ensureOneDriveToken(acc);
+      if (!token) {
+        connectOneDrive();
+        return;
+      }
+
+      const url = folderId === "root"
+        ? "https://graph.microsoft.com/v1.0/me/drive/root/children?$top=50"
+        : `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$top=50`;
+
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+
+      if (data.error) {
+        alert("Error de OneDrive: " + data.error.message);
+        return;
+      }
+
+      allFiles = allFiles.filter(f => f.accountId !== acc.id);
+      const mapped = (data.value || []).map(item => {
+        let type = "file";
+        const mime = item.file?.mimeType || "";
+        const lowerName = item.name.toLowerCase();
+        if (item.folder) type = "folder";
+        else if (mime.includes("pdf") || lowerName.endsWith(".pdf")) type = "pdf";
+        else if (mime.includes("spreadsheet") || lowerName.endsWith(".xlsx") || lowerName.endsWith(".csv")) type = "sheet";
+        else if (mime.includes("image")) type = "image";
+
+        return {
+          id: item.id,
+          accountId: acc.id,
+          provider: "onedrive",
+          name: item.name,
+          type,
+          size: item.size ? `${(item.size / 1024 / 1024).toFixed(2)} MB` : "—",
+          cloudLabel: acc.alias,
+          date: new Date(item.lastModifiedDateTime).toLocaleDateString(),
+          webViewLink: item.webUrl
+        };
+      });
+
+      mapped.sort((a, b) => (a.type === "folder" ? -1 : 1) - (b.type === "folder" ? -1 : 1));
+      allFiles = [...allFiles, ...mapped];
+      renderFiles();
+    }
+
+    // ==========================================
+    // INTERFAZ COMÚN Y SUBIDA DE ARCHIVOS
+    // ==========================================
     function getIcon(type) {
       const icons = { folder: "📁", pdf: "📕", sheet: "📊", image: "🖼️", file: "📄" };
       return icons[type] || "📄";
@@ -551,7 +751,7 @@
         const msg = document.createElement("div");
         msg.className = "empty-msg";
         msg.textContent = savedAccounts.length === 0
-          ? "Pulsa '+ Agregar Cuenta' en el menú izquierdo para conectar tu primer Google Drive."
+          ? "Pulsa '+ Agregar Cuenta' en el menú izquierdo para conectar Google Drive o OneDrive."
           : "No hay archivos para mostrar aquí (si la sesión expiró, haz clic en tu cuenta a la izquierda).";
         container.appendChild(msg);
         return;
@@ -619,16 +819,18 @@
       if (!acc) return;
 
       if (file.type === "folder") {
-        if (!isTokenValid(acc)) {
-          connectGoogleDrive(acc.email);
-          return;
-        }
         activeAccountId = acc.id;
         if (!acc.folderStack) acc.folderStack = [{ id: "root", name: acc.alias }];
         acc.folderStack.push({ id: file.id, name: file.name });
         saveAccountsToStorage();
         renderSidebarAccounts();
-        loadGoogleDriveFolder(acc, file.id);
+
+        if (acc.provider === "gdrive") {
+          if (!isTokenValid(acc)) connectGoogleDrive(acc.email);
+          else loadGoogleDriveFolder(acc, file.id);
+        } else {
+          loadOneDriveFolder(acc, file.id);
+        }
       } else if (file.webViewLink) {
         window.open(file.webViewLink, "_blank", "noopener");
       }
@@ -638,16 +840,21 @@
       if (acc.folderStack && acc.folderStack.length > 1) {
         acc.folderStack.pop();
         saveAccountsToStorage();
-        loadGoogleDriveFolder(acc, getCurrentFolderId(acc));
+        const folderId = getCurrentFolderId(acc);
+        if (acc.provider === "gdrive") loadGoogleDriveFolder(acc, folderId);
+        else loadOneDriveFolder(acc, folderId);
       }
     }
 
-    function triggerUpload() {
-      const targetAcc = activeAccountId === "all"
-        ? savedAccounts.find(a => isTokenValid(a))
-        : savedAccounts.find(a => a.id === activeAccountId && isTokenValid(a));
+    function getTargetActiveAccount() {
+      const isAccReady = a => isTokenValid(a) || (a.provider === "onedrive" && !!a.refreshToken);
+      return activeAccountId === "all"
+        ? savedAccounts.find(isAccReady)
+        : savedAccounts.find(a => a.id === activeAccountId && isAccReady(a));
+    }
 
-      if (!targetAcc) {
+    function triggerUpload() {
+      if (!getTargetActiveAccount()) {
         alert("Primero selecciona o inicia sesión en una cuenta activa para subir archivos.");
         return;
       }
@@ -656,31 +863,85 @@
 
     async function handleFileUpload(event) {
       const file = event.target.files[0];
-      if (!file) return;
-
-      const targetAcc = activeAccountId === "all"
-        ? savedAccounts.find(a => isTokenValid(a))
-        : savedAccounts.find(a => a.id === activeAccountId && isTokenValid(a));
-
-      if (!targetAcc) return;
+      const targetAcc = getTargetActiveAccount();
+      if (!file || !targetAcc) return;
 
       const currentFolder = getCurrentFolderId(targetAcc);
-      const metadata = { name: file.name, parents: [currentFolder] };
-      const form = new FormData();
-      form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
-      form.append("file", file);
 
-      const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${targetAcc.token}` },
-        body: form
-      });
+      if (targetAcc.provider === "gdrive") {
+        const metadata = { name: file.name, parents: [currentFolder] };
+        const form = new FormData();
+        form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+        form.append("file", file);
 
-      if (res.ok) {
-        alert(`✅ "${file.name}" subido a "${targetAcc.alias}".`);
-        loadGoogleDriveFolder(targetAcc, currentFolder);
-      } else {
-        alert("Hubo un error al subir el archivo.");
+        const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${targetAcc.token}` },
+          body: form
+        });
+
+        if (res.ok) {
+          alert(`✅ "${file.name}" subido a "${targetAcc.alias}".`);
+          loadGoogleDriveFolder(targetAcc, currentFolder);
+        } else {
+          alert("Hubo un error al subir a Google Drive.");
+        }
+      } else if (targetAcc.provider === "onedrive") {
+        const token = await ensureOneDriveToken(targetAcc);
+        if (!token) { connectOneDrive(); return; }
+
+        if (file.size <= 4 * 1024 * 1024) {
+          const path = currentFolder === "root"
+            ? `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(file.name)}:/content`
+            : `https://graph.microsoft.com/v1.0/me/drive/items/${currentFolder}:/${encodeURIComponent(file.name)}:/content`;
+
+          const res = await fetch(path, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${token}` },
+            body: file
+          });
+
+          if (res.ok) {
+            alert(`✅ "${file.name}" subido a "${targetAcc.alias}".`);
+            loadOneDriveFolder(targetAcc, currentFolder);
+          } else {
+            alert("Hubo un error al subir a OneDrive.");
+          }
+        } else {
+          const sessionUrl = currentFolder === "root"
+            ? `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(file.name)}:/createUploadSession`
+            : `https://graph.microsoft.com/v1.0/me/drive/items/${currentFolder}:/${encodeURIComponent(file.name)}:/createUploadSession`;
+
+          const sessionRes = await fetch(sessionUrl, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename", name: file.name } })
+          });
+          const sessionData = await sessionRes.json();
+          if (!sessionData.uploadUrl) {
+            alert("No se pudo iniciar la subida grande en OneDrive.");
+            return;
+          }
+
+          const chunkSize = 5 * 1024 * 1024;
+          let start = 0;
+          while (start < file.size) {
+            const end = Math.min(start + chunkSize, file.size);
+            const slice = file.slice(start, end);
+            const chunkRes = await fetch(sessionData.uploadUrl, {
+              method: "PUT",
+              headers: { "Content-Range": `bytes ${start}-${end - 1}/${file.size}` },
+              body: slice
+            });
+            if (!chunkRes.ok) {
+              alert("Error durante la subida del archivo a OneDrive.");
+              return;
+            }
+            start = end;
+          }
+          alert(`✅ "${file.name}" subido a "${targetAcc.alias}".`);
+          loadOneDriveFolder(targetAcc, currentFolder);
+        }
       }
       event.target.value = "";
     }
